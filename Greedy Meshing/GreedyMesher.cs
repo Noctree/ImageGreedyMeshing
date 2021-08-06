@@ -18,11 +18,20 @@ namespace Greedy_Meshing
         private List<Rectangle> meshAreas = new List<Rectangle>();
         private int tolerance = 0;
         private bool disposedValue;
+        private Color[] pixels = null;
+        public bool UseOldColorTolerance = false;
+        public int MeshCount { get { return meshAreas.Count; } }
 
-        public GreedyMesher(Bitmap image, int tolerance = 0)
+        public GreedyMesher(Bitmap image, int tolerance = 0, bool useOldColorTolerance = false)
         {
             bitmap = new Bitmap(image);
             this.tolerance = tolerance;
+            UseOldColorTolerance = useOldColorTolerance;
+        }
+
+        public void ExtractImagePixels()
+        {
+            pixels = GetBitmapPixels();
         }
 
         public List<Rectangle> GetMeshes()
@@ -55,7 +64,8 @@ namespace Greedy_Meshing
         public IEnumerator<Rectangle> GetNextMesh()
         {
             meshAreas.Clear();
-            var pixels = GetBitmapPixels();
+            if (pixels is null)
+                pixels = GetBitmapPixels();
             Queue<Point> pointsX = new Queue<Point>();
             Queue<Point> pointsY = new Queue<Point>();
             BitArray visited = new BitArray(pixels.Length);
@@ -114,9 +124,16 @@ namespace Greedy_Meshing
 
         private bool ColorInRange(Color source, Color target, int tolerance)
         {
-            return  (target.R <= source.R + tolerance && target.R >= source.R - tolerance) &&
-                    (target.G <= source.G + tolerance && target.G >= source.G - tolerance) &&
-                    (target.R <= source.B + tolerance && target.B >= source.B - tolerance);
+            if (UseOldColorTolerance) {
+                return  (target.R <= source.R + tolerance && target.R >= source.R - tolerance) &&
+                        (target.G <= source.G + tolerance && target.G >= source.G - tolerance) &&
+                        (target.R <= source.B + tolerance && target.B >= source.B - tolerance);
+            }
+            int r = source.R - target.R,
+                g = source.G - target.G,
+                b = source.B - target.B,
+                a = source.A - target.A;
+            return (r * r + g * g + b * b + a * a) <= tolerance * tolerance;
         }
 
         private Rectangle CreateRectangle(int MinX, int MinY, int MaxX, int MaxY)
@@ -155,18 +172,14 @@ namespace Greedy_Meshing
         {
             if (!disposedValue) {
                 if (disposing) {
-                    // TODO: dispose managed state (managed objects)
                     meshAreas.Clear();
                 }
                 bitmap.Dispose();
-
-                // TODO: free unmanaged resources (unmanaged objects) and override finalizer
-                // TODO: set large fields to null
+                pixels = null;
                 disposedValue = true;
             }
         }
 
-        // // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
         ~GreedyMesher()
         {
              // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method

@@ -20,17 +20,25 @@ namespace Greedy_Meshing
         private bool IsMeshing = false;
         private GreedyMesher mesher;
         private IEnumerator<Rectangle> mesherEnumerator;
+        private Random rng = new Random();
+        private Graphics gfx;
+        private string Title;
         public Main()
         {
             InitializeComponent();
             GreedyMeshUpdateTimer.Interval = (int)MeshingUpdateRateSelector.Value;
+            Title = this.Text;
         }
 
         private void OnLoadImage(object sender, EventArgs e)
         {
             if (SelectImageDialog.ShowDialog() == DialogResult.OK) {
+                SetStatus("Loading Source Image...");
+                origImage?.Dispose();
+                origImage = null;
                 origImage = (Bitmap)Image.FromFile(SelectImageDialog.FileName);
                 OriginalImageDisplay.Image = origImage;
+                SetStatus();
             }
         }
 
@@ -41,10 +49,19 @@ namespace Greedy_Meshing
                 return;
             }
 
+            SetStatus("Freeing Memory...");
+            gfx?.Dispose();
+            gfx = null;
             mesher?.Dispose();
+            meshedImage?.Dispose();
+            GC.Collect();
+
+            SetStatus("Extracting Image Data...");
             mesher = new GreedyMesher(origImage, (int)MeshingTolerance.Value);
-            GreedyMeshingDisplay.Image = mesher.TestPixelGetter();
+            mesher.ExtractImagePixels();
             meshedImage = (Bitmap)origImage.Clone();
+            SetStatus("Finding Meshes...");
+
             if (ProgressiveProcessing.Checked) {
                 mesherEnumerator = mesher.GetNextMesh();
                 mesherEnumerator.MoveNext();
@@ -55,12 +72,23 @@ namespace Greedy_Meshing
                 stopwatch.Start();
                 var meshes = mesher.DoGreedyMeshing();
                 stopwatch.Stop();
+                TimeSpan meshingTime = stopwatch.Elapsed;
                 Debug.WriteLine($"Greedy Meshing Time: {stopwatch.Elapsed}");
+                SetStatus("Rendering Meshes...");
+                stopwatch.Restart();
+                int doEventsCounter = 0;
                 foreach (Rectangle mesh in meshes) {
-                    DrawMesh(meshedImage, mesh, UseRandomColor.Checked);
+                    DrawMesh(meshedImage, mesh);
+                    ++doEventsCounter;
+                    if (doEventsCounter > 1000000)
+                        Application.DoEvents();
                 }
+                stopwatch.Stop();
                 GreedyMeshingDisplay.Image = meshedImage;
+                SetStatus();
+                MessageBox.Show($"Greedy Meshing Completed!\nTotal meshes found: {mesher.MeshCount}\nFinding meshes time: {meshingTime}\nRendering time: {stopwatch.Elapsed}");
             }
+            GC.Collect();
         }
 
         private void OnUpdateRefreshRate(object sender, EventArgs e)
@@ -71,22 +99,40 @@ namespace Greedy_Meshing
         private void OnTimerTick(object sender, EventArgs e)
         {
             if (IsMeshing) {
-                GreedyMeshingDisplay.Image = DrawMesh(meshedImage, mesherEnumerator.Current, UseRandomColor.Checked);
-                if (!mesherEnumerator.MoveNext()) {
+                bool finished = false;
+                for (int i = 0; i < MeshesPerTick.Value; i++) {
+                    if (!mesherEnumerator.MoveNext()) {
+                        finished = true;
+                        break;
+                    }
+                    Rectangle mesh = mesherEnumerator.Current;
+                    if ((mesh.Width + 1) * (mesh.Height + 1) > (int)Math.Ceiling(MeshSizeThresholdInput.Value)) {
+                        GreedyMeshingDisplay.Image = DrawMesh(meshedImage, mesh);
+                    }
+                }
+                if (finished) {
                     IsMeshing = false;
                     GreedyMeshUpdateTimer.Stop();
                     meshedImage.Save(Environment.CurrentDirectory + "/meshedImage.png");
+                    SetStatus();
+                    MessageBox.Show($"Greedy Meshing Completed!\nTotal meshes found: {mesher.MeshCount}");
                 }
             }
         }
 
-        private Bitmap DrawMesh(Bitmap image, Rectangle mesh, bool RandomColor = false)
+        private Bitmap DrawMesh(Bitmap image, Rectangle mesh)
         {
             //Debug.WriteLine(mesh.ToString());
-            var gfx = Graphics.FromImage(image);
+            if (gfx is null)
+                gfx = Graphics.FromImage(image);
+            if ((mesh.Width + 1) * (mesh.Height + 1) < (int)Math.Ceiling(MeshSizeThresholdInput.Value)) {
+                return image;
+            }
             mesh.Width += 1;
             mesh.Height += 1;
-            if (RandomColor)
+            if (UseRandomColor.Checked)
+                gfx.FillRectangle(CreatePenWithRandomColor().Brush, mesh);
+            else if (UseGeneratedColor.Checked)
                 gfx.FillRectangle(CreatePenWithGeneratedColor().Brush, mesh);
             else {
                 Point point = mesh.Location;
@@ -108,7 +154,6 @@ namespace Greedy_Meshing
 
         private Pen CreatePenWithRandomColor()
         {
-            var rng = new Random();
             var color = Color.FromArgb(255, rng.Next(0, 256), rng.Next(0, 256), rng.Next(0, 256));
             return new Pen(color);
         }
@@ -117,6 +162,28 @@ namespace Greedy_Meshing
         {
             IsMeshing = false;
             GreedyMeshUpdateTimer.Stop();
+            SetStatus();
+        }
+
+        private void OnSaveOutput(object sender, EventArgs e)
+        {
+            if (SaveOutputDialog.ShowDialog() == DialogResult.OK) {
+                SetStatus("Saving Output...");
+                meshedImage.Save(SaveOutputDialog.FileName, ImageFormat.Png);
+                SetStatus();
+            }
+        }
+
+        private void SetStatus(string status = null)
+        {
+            if (string.IsNullOrEmpty(status)) {
+                Text = Title;
+                StatusDisplay.Text = "Status: Idle";
+            } else {
+                Text = $"{Title} - {status}";
+                StatusDisplay.Text = "Status: " + status;
+            }
+            Application.DoEvents();
         }
     }
 }
