@@ -57,14 +57,13 @@ namespace Greedy_Meshing
             GC.Collect();
 
             SetStatus("Extracting Image Data...");
-            mesher = new GreedyMesher(origImage, (int)MeshingTolerance.Value);
+            mesher = new GreedyMesher(origImage, (int)MeshingTolerance.Value, UseOldColorTolerance.Checked);
             mesher.ExtractImagePixels();
             meshedImage = (Bitmap)origImage.Clone();
             SetStatus("Finding Meshes...");
 
             if (ProgressiveProcessing.Checked) {
                 mesherEnumerator = mesher.GetNextMesh();
-                mesherEnumerator.MoveNext();
                 IsMeshing = true;
                 GreedyMeshUpdateTimer.Start();
             } else {
