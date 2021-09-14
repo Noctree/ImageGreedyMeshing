@@ -17,6 +17,7 @@ namespace Greedy_Meshing
         private Color color = Color.Black;
         private Bitmap origImage;
         private Bitmap meshedImage;
+        private Bitmap customSampler;
         private bool IsMeshing = false;
         private GreedyMesher mesher;
         private IEnumerator<Rectangle> mesherEnumerator;
@@ -30,6 +31,13 @@ namespace Greedy_Meshing
             Title = this.Text;
         }
 
+        public void StopGreedyMeshing()
+        {
+            IsMeshing = false;
+            GreedyMeshUpdateTimer.Stop();
+            SetStatus();
+        }
+
         private void OnLoadImage(object sender, EventArgs e)
         {
             if (SelectImageDialog.ShowDialog() == DialogResult.OK) {
@@ -38,6 +46,18 @@ namespace Greedy_Meshing
                 origImage = null;
                 origImage = (Bitmap)Image.FromFile(SelectImageDialog.FileName);
                 OriginalImageDisplay.Image = origImage;
+                SetStatus();
+            }
+        }
+
+        private void OnLoadCustomSampler(object sender, EventArgs e)
+        {
+            if (SelectImageDialog.ShowDialog() == DialogResult.OK) {
+                SetStatus("Loading Custom Sample Texture...");
+                customSampler?.Dispose();
+                customSampler = null;
+                customSampler = (Bitmap)Image.FromFile(SelectImageDialog.FileName);
+                SetCustomSamplerPathDisplay(SelectImageDialog.FileName);
                 SetStatus();
             }
         }
@@ -60,6 +80,7 @@ namespace Greedy_Meshing
             mesher = new GreedyMesher(origImage, (int)MeshingTolerance.Value, UseOldColorTolerance.Checked);
             mesher.ExtractImagePixels();
             meshedImage = (Bitmap)origImage.Clone();
+            GreedyMeshingDisplay.Image = meshedImage;
             SetStatus("Finding Meshes...");
 
             if (ProgressiveProcessing.Checked) {
@@ -133,6 +154,17 @@ namespace Greedy_Meshing
                 gfx.FillRectangle(CreatePenWithRandomColor().Brush, mesh);
             else if (UseGeneratedColor.Checked)
                 gfx.FillRectangle(CreatePenWithGeneratedColor().Brush, mesh);
+            else if (UseCustomTexture.Checked) {
+                if (customSampler is null) {
+                    StopGreedyMeshing();
+                    MessageBox.Show("No Custom Sample Texture Loaded!");
+                    return image;
+                }
+                Point point = mesh.Location;
+                PointF uv = new PointF(point.X / (float)meshedImage.Width, point.Y / (float)meshedImage.Height);
+                Point samplePoint = new Point((int)(customSampler.Width * uv.X), (int)(customSampler.Height * uv.Y));
+                gfx.FillRectangle(new Pen(customSampler.GetPixel(samplePoint.X, samplePoint.Y)).Brush, mesh);
+            }
             else {
                 Point point = mesh.Location;
                 gfx.FillRectangle(new Pen(origImage.GetPixel(point.X, point.Y)).Brush, mesh);
@@ -159,9 +191,7 @@ namespace Greedy_Meshing
 
         private void OnStopGreedyMeshing(object sender, EventArgs e)
         {
-            IsMeshing = false;
-            GreedyMeshUpdateTimer.Stop();
-            SetStatus();
+            StopGreedyMeshing();
         }
 
         private void OnSaveOutput(object sender, EventArgs e)
@@ -183,6 +213,20 @@ namespace Greedy_Meshing
                 StatusDisplay.Text = "Status: " + status;
             }
             Application.DoEvents();
+        }
+
+        private void SetCustomSamplerPathDisplay(string path = null)
+        {
+            if (string.IsNullOrEmpty(path))
+                path = "No Custom Sampler Texture Loaded";
+            CustomSamplerTexPathDisplay.Text = $"Custom Sampler Texture Path: {path}";
+        }
+
+        private void OnUnloadCustomSampler(object sender, EventArgs e)
+        {
+            customSampler?.Dispose();
+            customSampler = null;
+            SetCustomSamplerPathDisplay();
         }
     }
 }
